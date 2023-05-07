@@ -413,6 +413,50 @@ export default class PastetoIndentationPlugin extends Plugin {
               }
             }
           }
+          
+          // Replace <span class="descriptive"> with <em><strong>
+		  const descriptiveElements = htmlDom.querySelectorAll("span.descriptive");
+		  
+		  for (const [i, el] of descriptiveElements.entries()) {
+			const inner = el.innerHTML;
+			
+			const em = htmlDom.createElement("em");
+			const strong = htmlDom.createElement("strong");
+			strong.innerHTML = inner;
+			em.appendChild(strong);
+			
+			descriptiveElements[i].replaceWith(em);
+		  }
+          
+          // Strip <h1>, <h2> etc. tags
+          const headingElements = htmlDom.querySelectorAll("h1, h2, h3, h4, h5, h6");
+          
+          for (const [i, el] of headingElements.entries()) {
+              const p = htmlDom.createElement("p");
+              p.innerHTML = el.innerHTML;
+              el.replaceWith(p);
+          }
+          
+          // Escape brackets
+          // Only want to do this in text nodes ...
+          const allElements = htmlDom.querySelectorAll("*");
+          
+          for (const [i, el] of allElements.entries()) {
+              for (const child of el.childNodes) {
+                  if (child.nodeName === "#text") {
+                      const nodeVal = child.nodeValue;
+                      const bracketMatches = [...nodeVal.matchAll(/(?<!\\)(?:\[|\])/gm)];
+                      var substituted = nodeVal;
+                      for (let bracketMatch of bracketMatches.reverse()) {
+                        const escaped = "\\" + bracketMatch[0];
+                        substituted = substituted.substring(0, bracketMatch.index)
+                          + escaped
+                          + substituted.substring(bracketMatch.index + 1, substituted.length);
+                      }
+                      child.nodeValue = substituted;
+                  }
+              }
+          }
 
           clipboardContents = htmlToMarkdown(htmlDom.documentElement.innerHTML);
 
@@ -440,7 +484,7 @@ export default class PastetoIndentationPlugin extends Plugin {
 
         const leadingWhitespaceMatch = editor
           .getLine(editor.getCursor().line)
-          .match(new RegExp(`^(\\s*)(.*)?`));
+          .match(/^([\s\>]*)([*-\d].*)?/);  // Handle blockquotes/lists
         const leadingWhitespace =
           leadingWhitespaceMatch !== null ? leadingWhitespaceMatch[1] : "";
 
@@ -500,6 +544,27 @@ export default class PastetoIndentationPlugin extends Plugin {
             : []),
           ...fileLinks,
         ].map((line, i) => {
+          /* Deprecated: we strip <h1> etc. tags above instead
+          // Strip #s from the beginning of heading lines
+          const headingMatch = line.match(/^(#+\s+)(.*)/);
+          if (headingMatch !== null) {
+            line = headingMatch[2];
+          }
+          */
+          
+          // Escape multiple underscores
+          const underscoresMatches = [...line.matchAll(/_{2,}/g)];
+          var substituted = line;
+          for (let match of underscoresMatches.reverse()) {
+            const escaped = "\\_".repeat(match[0].length);
+            substituted = substituted.substring(0, match.index)
+              + escaped
+              + substituted.substring(match.index + match[0].length, substituted.length);
+          }
+          
+          // replace _italics_ with *italics*
+          line = substituted.replaceAll(/(?<!\\)\b_([^\r\n]*?)_\b/g, "*$1*");
+          
           if (i === 0) {
             return line;
           }
